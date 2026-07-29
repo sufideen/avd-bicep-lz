@@ -550,23 +550,27 @@ and reference it from the code comment.
 - `az desktopvirtualization sessionhost list` isn't available in stock az CLI
   (needs the `desktopvirtualization` extension); this repo's instructions use
   a plain `az rest` call instead so there's no extension dependency.
-- **Open issue: a Global Administrator account (`sufyan@ict-cloud.solutions`)
-  intermittently fails to sign in to a session host, while an otherwise
-  identical non-admin pilot user connects successfully every time.** Ruled
-  out during investigation, with evidence for each: the missing
-  `Virtual Machine User Login` role (fixed, see "Assign a pilot user"); the
-  missing `customRdpProperty` causing NTLM fallback (fixed, see
-  "Troubleshooting: users can't sign in"); keyboard layout (ruled out via
-  copy-paste); cached credentials, both browser and Windows Credential
-  Manager (both checked clean); and Conditional Access (the only policy in
-  the tenant is `enabledForReportingButNotEnforced`, requires only MFA, and
-  explicitly excludes this user). One retry's Entra sign-in log showed the
-  underlying "Windows Sign In" event succeeding at the same minute the
-  browser displayed "Sign in Failed," which points at a stale client-side
-  session/display state (specific to the browser tab used throughout
-  testing) rather than a real, live authentication rejection — but this
-  wasn't confirmed with a clean-room retry (different device/browser) before
-  the investigation was paused. Next step whenever this is picked back up:
-  retry from a browser/device that was never involved in the original
-  failed attempts, and check the sign-in log immediately after rather than
-  trusting the on-screen message.
+- **By design, not a bug: Global Administrator accounts cannot sign in to a
+  session host.** `sufyan@ict-cloud.solutions` (Global Administrator +
+  Identity Governance Administrator) consistently fails at the session
+  host's sign-in step with "incorrect password" even with a verified-correct
+  password, while an otherwise-identical non-admin pilot user
+  (`avdpilot-test`) connects successfully every time. Confirmed to be
+  role-specific, not account-specific: a brand-new throwaway account,
+  cloned with the same two directory roles and no prior sign-in history,
+  reproduced the identical failure immediately. Everything else was ruled
+  out first, with evidence for each: the missing `Virtual Machine User
+  Login` role (fixed, see "Assign a pilot user"); the missing
+  `customRdpProperty` causing NTLM fallback (fixed, see "Troubleshooting:
+  users can't sign in"); keyboard layout (ruled out via copy-paste); cached
+  credentials, both browser and Windows Credential Manager (checked clean);
+  and Conditional Access (the only policy in the tenant is
+  `enabledForReportingButNotEnforced`, requires only MFA, and explicitly
+  excludes this user). This lines up with Microsoft's own Privileged Access
+  Workstation guidance — Global Administrator credentials are not meant to
+  be typed into a general-purpose or virtualized session in the first
+  place, so this is arguably the platform doing its job rather than a
+  misconfiguration to fix. **No action needed**: the pilot's actual target
+  users should hold only the two AVD-scoped roles (as documented in "Assign
+  a pilot user"), never a directory admin role, and `avdpilot-test` already
+  proves that path works end-to-end.
