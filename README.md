@@ -550,3 +550,23 @@ and reference it from the code comment.
 - `az desktopvirtualization sessionhost list` isn't available in stock az CLI
   (needs the `desktopvirtualization` extension); this repo's instructions use
   a plain `az rest` call instead so there's no extension dependency.
+- **Open issue: a Global Administrator account (`sufyan@ict-cloud.solutions`)
+  intermittently fails to sign in to a session host, while an otherwise
+  identical non-admin pilot user connects successfully every time.** Ruled
+  out during investigation, with evidence for each: the missing
+  `Virtual Machine User Login` role (fixed, see "Assign a pilot user"); the
+  missing `customRdpProperty` causing NTLM fallback (fixed, see
+  "Troubleshooting: users can't sign in"); keyboard layout (ruled out via
+  copy-paste); cached credentials, both browser and Windows Credential
+  Manager (both checked clean); and Conditional Access (the only policy in
+  the tenant is `enabledForReportingButNotEnforced`, requires only MFA, and
+  explicitly excludes this user). One retry's Entra sign-in log showed the
+  underlying "Windows Sign In" event succeeding at the same minute the
+  browser displayed "Sign in Failed," which points at a stale client-side
+  session/display state (specific to the browser tab used throughout
+  testing) rather than a real, live authentication rejection — but this
+  wasn't confirmed with a clean-room retry (different device/browser) before
+  the investigation was paused. Next step whenever this is picked back up:
+  retry from a browser/device that was never involved in the original
+  failed attempts, and check the sign-in log immediately after rather than
+  trusting the on-screen message.
