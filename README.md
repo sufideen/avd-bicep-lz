@@ -360,7 +360,7 @@ and reference it from the code comment.
 | 4:45–5:30 | RBAC/least-privilege pass (Desktop Virtualization User role scoped to app group only), NSG review |
 | 5:30–6:00 | README + this talking points doc; capture screenshots of working session for the interview |
 
-## Deferred to production (say this explicitly in the interview — it shows judgment)
+## Deferred to production :Reasons
 - **Golden image pipeline** (Azure Compute Gallery + Image Builder) — pilot uses
   marketplace image directly to save build time; production needs a versioned,
   patched, FSLogix-preinstalled image
