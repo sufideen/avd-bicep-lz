@@ -1,0 +1,14 @@
+# Local overrides / secrets — never commit
+*.local.bicepparam
+.env
+*.pfx
+*.pem
+
+# Bicep build output
+*.json.bak
+.bicep/
+
+# OS/editor noise
+.DS_Store
+.vscode/
+*.swp

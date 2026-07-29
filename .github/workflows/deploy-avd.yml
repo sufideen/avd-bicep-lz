@@ -1,0 +1,82 @@
+name: Deploy AVD Pilot
+
+# What-If runs on every PR touching Bicep — nothing is applied.
+# Apply runs only on merge to main, after a manual approval gate.
+#
+# Scope: Phase 1 only (main.bicep — networking/storage/host pool/workspace/
+# scaling plan). Phase 2 (session hosts) is not wired in here — it needs a
+# registration token fetched live via CLI, which doesn't fit a plain
+# `deployment create` step. See README "Phase 2" for the manual process.
+# AVD_ADMIN_PASSWORD is reserved for whenever Phase 2 gets automated;
+# main.bicep itself takes no adminPassword param, so don't pass one here.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '**.bicep'
+      - '**.bicepparam'
+      - '.github/workflows/deploy-avd.yml'
+  push:
+    branches: [main]
+    paths:
+      - '**.bicep'
+      - '**.bicepparam'
+
+permissions:
+  id-token: write   # required for OIDC federated login — no stored secrets
+  contents: read
+
+env:
+  RESOURCE_GROUP: rg-avd-poc
+  LOCATION: uksouth
+
+jobs:
+  what-if:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure resource group exists
+        run: |
+          az group create --name $RESOURCE_GROUP --location $LOCATION
+
+      - name: What-If
+        run: |
+          az deployment group what-if \
+            --resource-group $RESOURCE_GROUP \
+            --template-file main.bicep \
+            --parameters params/pilot.bicepparam
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production   # gives you a manual approval gate in repo settings
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure resource group exists
+        run: |
+          az group create --name $RESOURCE_GROUP --location $LOCATION
+
+      - name: Deploy
+        run: |
+          az deployment group create \
+            --resource-group $RESOURCE_GROUP \
+            --template-file main.bicep \
+            --parameters params/pilot.bicepparam
