@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1240 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="arch-title arch-desc" font-family="Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif">
+  <title id="arch-title">Azure Virtual Desktop pilot architecture</title>
+  <desc id="arch-desc">Microsoft-managed control plane at top, Microsoft Entra ID on the left, and the customer resource group in the center containing the workspace, application group, host pool, scaling plan, virtual network with two session hosts, and FSLogix storage account.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5B6B78"/>
+    </marker>
+    <marker id="arrowd" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8A97A3"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1240" height="700" rx="12" fill="#FBFCFD"/>
+  <rect x="1" y="1" width="1238" height="698" rx="11" fill="none" stroke="#D4DAE0"/>
+
+  <style>
+    text { fill: #151B23; }
+    .lbl { font-weight: 600; }
+    .sub { font-family: "Cascadia Code", SFMono-Regular, Consolas, monospace; font-size: 11px; fill: #6D7887; }
+    .zone-title { font-family: "Cascadia Code", SFMono-Regular, Consolas, monospace; font-size: 11px; letter-spacing: .06em; }
+    .edge-lbl { font-family: "Cascadia Code", SFMono-Regular, Consolas, monospace; font-size: 11px; fill: #46515F; }
+    .n-msft { fill: #F1ECFB; stroke: #7A5CC0; }
+    .n-id { fill: #E9ECFB; stroke: #4C5FC0; }
+    .n-rg { fill: #EAF5F2; stroke: #1F8A7D; }
+    .n-net { fill: #EAF2F8; stroke: #3D6B8C; }
+    .n-store { fill: #FBF1DE; stroke: #B8791A; }
+    .box { stroke-width: 1.6; }
+    .zone { stroke-width: 1.4; stroke-dasharray: 5 4; fill-opacity: .55; }
+    .line { stroke: #5B6B78; stroke-width: 1.6; fill: none; }
+    .dash { stroke: #8A97A3; stroke-width: 1.4; fill: none; stroke-dasharray: 4 4; }
+  </style>
+
+  <!-- Client -->
+  <rect x="600" y="26" width="230" height="62" rx="8" class="box n-net"/>
+  <text x="715" y="52" text-anchor="middle" class="lbl" font-size="13">User endpoint</text>
+  <text x="715" y="70" text-anchor="middle" class="sub">Windows App &#183; browser</text>
+
+  <!-- Microsoft-managed control plane zone -->
+  <rect x="290" y="118" width="910" height="140" rx="12" class="zone n-msft"/>
+  <text x="306" y="138" class="zone-title" fill="#4C3690">MICROSOFT-MANAGED CONTROL PLANE</text>
+
+  <rect x="320" y="160" width="180" height="70" rx="8" class="box n-msft"/>
+  <text x="410" y="188" text-anchor="middle" class="lbl" font-size="12.5">Web / Client feed</text>
+  <text x="410" y="204" text-anchor="middle" class="sub">Workspace endpoint</text>
+
+  <rect x="520" y="160" width="180" height="70" rx="8" class="box n-msft"/>
+  <text x="610" y="188" text-anchor="middle" class="lbl" font-size="12.5">Gateway</text>
+  <text x="610" y="204" text-anchor="middle" class="sub">reverse connect &#183; TCP 443</text>
+
+  <rect x="720" y="160" width="180" height="70" rx="8" class="box n-msft"/>
+  <text x="810" y="188" text-anchor="middle" class="lbl" font-size="12.5">Connection Broker</text>
+  <text x="810" y="204" text-anchor="middle" class="sub">session assignment</text>
+
+  <rect x="920" y="160" width="180" height="70" rx="8" class="box n-msft"/>
+  <text x="1010" y="188" text-anchor="middle" class="lbl" font-size="12.5">Diagnostics</text>
+  <text x="1010" y="204" text-anchor="middle" class="sub">Log Analytics</text>
+
+  <!-- Identity plane -->
+  <rect x="40" y="160" width="170" height="440" rx="12" class="zone n-id"/>
+  <text x="56" y="180" class="zone-title" fill="#313F94">IDENTITY PLANE</text>
+  <text x="125" y="360" text-anchor="middle" class="lbl" font-size="13.5">Microsoft</text>
+  <text x="125" y="378" text-anchor="middle" class="lbl" font-size="13.5">Entra ID</text>
+  <text x="125" y="400" text-anchor="middle" class="sub">sign-in</text>
+  <text x="125" y="415" text-anchor="middle" class="sub">device join</text>
+  <text x="125" y="430" text-anchor="middle" class="sub">Kerberos (AADKERB)</text>
+
+  <!-- Customer RG zone -->
+  <rect x="290" y="284" width="910" height="316" rx="12" class="zone n-rg"/>
+  <text x="306" y="304" class="zone-title" fill="#135E54">CUSTOMER SUBSCRIPTION &#183; RESOURCE GROUP rg-avd-poc</text>
+
+  <!-- AVD service objects row -->
+  <rect x="310" y="318" width="160" height="58" rx="8" class="box n-rg"/>
+  <text x="390" y="342" text-anchor="middle" class="lbl" font-size="12">Workspace</text>
+  <text x="390" y="358" text-anchor="middle" class="sub">avdpoc-ws-pilot</text>
+
+  <rect x="490" y="318" width="180" height="58" rx="8" class="box n-rg"/>
+  <text x="580" y="342" text-anchor="middle" class="lbl" font-size="12">Application Group</text>
+  <text x="580" y="358" text-anchor="middle" class="sub">Desktop &#183; avdpoc-dag-pilot</text>
+
+  <rect x="690" y="318" width="160" height="58" rx="8" class="box n-rg"/>
+  <text x="770" y="342" text-anchor="middle" class="lbl" font-size="12">Host Pool</text>
+  <text x="770" y="358" text-anchor="middle" class="sub">Pooled &#183; BreadthFirst</text>
+
+  <rect x="900" y="318" width="180" height="58" rx="8" class="box n-rg" stroke-dasharray="4 3"/>
+  <text x="990" y="342" text-anchor="middle" class="lbl" font-size="12">Scaling Plan</text>
+  <text x="990" y="358" text-anchor="middle" class="sub">ramp-up &#183; peak &#183; ramp-down</text>
+
+  <!-- VNet -->
+  <rect x="310" y="410" width="560" height="176" rx="8" class="box n-net" stroke-width="1.4"/>
+  <text x="326" y="430" class="lbl" fill="#274A62" font-size="12">VNet 10.50.0.0/24</text>
+  <rect x="328" y="444" width="524" height="122" rx="7" fill="#FBFCFD" stroke="#3D6B8C" stroke-width="1.2" stroke-dasharray="3 3"/>
+  <text x="342" y="462" class="sub">Subnet snet-sessionhosts &#183; NSG: deny all inbound</text>
+
+  <rect x="350" y="480" width="220" height="72" rx="8" class="box n-rg"/>
+  <text x="460" y="510" text-anchor="middle" class="lbl" font-size="12">avdhost-01</text>
+  <text x="460" y="526" text-anchor="middle" class="sub">Win11 multi-session</text>
+
+  <rect x="590" y="480" width="220" height="72" rx="8" class="box n-rg"/>
+  <text x="700" y="510" text-anchor="middle" class="lbl" font-size="12">avdhost-02</text>
+  <text x="700" y="526" text-anchor="middle" class="sub">Win11 multi-session</text>
+
+  <!-- Storage -->
+  <rect x="900" y="410" width="280" height="176" rx="8" class="box n-store"/>
+  <text x="916" y="430" class="lbl" fill="#7A4F0F" font-size="12">Storage Account</text>
+  <text x="916" y="446" class="sub">Premium FileStorage &#183; AADKERB</text>
+  <rect x="916" y="470" width="248" height="60" rx="6" fill="#FBFCFD" stroke="#B8791A" stroke-width="1.2"/>
+  <text x="1040" y="495" text-anchor="middle" class="lbl" font-size="12">Share: fslogix-profiles</text>
+  <text x="1040" y="512" text-anchor="middle" class="sub">SMB &#183; quota 1024 GiB</text>
+  <text x="916" y="558" class="sub">network ACL: deny &#183; allow subnet only</text>
+
+  <!-- Edges -->
+  <path class="line" marker-end="url(#arrow)" d="M690,88 L610,160"/>
+  <text x="700" y="120" class="edge-lbl" text-anchor="middle">RDP session &#183; 443 outbound only</text>
+
+  <path class="dash" marker-end="url(#arrowd)" d="M600,70 C420,110 260,140 205,170"/>
+  <text x="330" y="100" class="edge-lbl">sign-in / Conditional Access</text>
+
+  <path class="line" marker-end="url(#arrow)" d="M700,195 L720,195"/>
+
+  <path class="line" marker-end="url(#arrow)" d="M810,230 L780,318"/>
+  <text x="900" y="270" class="edge-lbl" text-anchor="middle">assigns session host</text>
+
+  <path class="line" marker-end="url(#arrow)" d="M470,376 L490,347"/>
+  <path class="line" marker-end="url(#arrow)" d="M670,347 L690,347"/>
+  <text x="580" y="392" class="edge-lbl" text-anchor="middle">publishes</text>
+
+  <path class="dash" d="M900,347 L851,347" marker-end="url(#arrowd)"/>
+  <text x="960" y="392" class="edge-lbl" text-anchor="middle">schedule</text>
+
+  <path class="line" marker-end="url(#arrow)" d="M770,376 L640,444"/>
+  <text x="690" y="410" class="edge-lbl" text-anchor="middle">routes session</text>
+
+  <path class="dash" marker-end="url(#arrowd)" d="M210,340 C280,400 320,470 350,504"/>
+  <text x="230" y="450" class="edge-lbl">Entra join +</text>
+  <text x="230" y="464" class="edge-lbl">AADLoginForWindows</text>
+
+  <path class="line" marker-end="url(#arrow)" d="M810,516 L900,510"/>
+  <text x="855" y="500" class="edge-lbl" text-anchor="middle">SMB mount at logon</text>
+
+  <path class="dash" marker-end="url(#arrowd)" d="M125,600 L125,650 L1040,650 L1040,586"/>
+  <text x="580" y="644" class="edge-lbl" text-anchor="middle">Kerberos ticket (AADKERB) &#8212; no storage account keys used by hosts</text>
+</svg>

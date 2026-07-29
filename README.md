@@ -5,6 +5,10 @@ profile storage, a scaling plan, and network isolation. Scoped deliberately
 small (pilot, not production) to be buildable and explainable in a single
 focused session.
 
+See [docs/architecture-reference.md](docs/architecture-reference.md) for the
+architecture diagram, user access model, an RDS↔AVD terminology map, and the
+security posture behind this build.
+
 **Status:** Phase 1 and Phase 2 are both deployed and verified working in
 `rg-avd-poc` (uksouth) — both session hosts (`avdpoc-avdhost-01`,
 `avdpoc-avdhost-02`) are registered and `Available` in the host pool. Getting
