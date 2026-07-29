@@ -12,7 +12,7 @@ there surfaced a real registration bug in the MSI install path; see
 [Troubleshooting: session hosts not registering](#troubleshooting-session-hosts-not-registering-in-the-host-pool)
 before you hit the same thing.
 
-## What this proves for the interview
+## What this proves---
 - You can go from "AVD concept" to **running infrastructure-as-code** in hours, not weeks
 - You understand the AVD-specific pieces that don't exist in classic RDS: host pool
   registration tokens, FSLogix Kerberos auth on Azure Files, autoscale plans
