@@ -280,6 +280,24 @@ Both `pilotUserObjectId` and `entraGroupObjectId` can be set at the same
 time (e.g. a named admin tester plus the real user group) — they create
 independent role assignments, so neither one overwrites the other.
 
+### Testing sign-in with a non-admin account
+
+If sign-in fails at the session host's Windows credential prompt for an
+admin/privileged account even with a correct password, that's usually not an
+AVD or RBAC problem — it's Conditional Access or an Authentication Methods
+policy requiring phishing-resistant MFA for that account, which the embedded
+credential prompt can't satisfy. Rule this out by testing with an ordinary,
+non-admin user instead. [`create-pilot-test-user.ps1`](create-pilot-test-user.ps1)
+automates creating one: it makes an Entra user, licenses it (required before
+license assignment: sets `usageLocation`, so run it with `-ListLicensesOnly`
+first if you don't already know which SKU has spare seats), and grants it
+both AVD roles above.
+
+```powershell
+./create-pilot-test-user.ps1 -ListLicensesOnly
+./create-pilot-test-user.ps1 -LicenseSkuPartNumber <sku-from-above>
+```
+
 User connects via https://client.wvd.microsoft.com/arm/webclient or the
 Windows App client, signs in with Entra ID, sees the pilot desktop.
 
