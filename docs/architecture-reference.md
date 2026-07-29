@@ -117,7 +117,11 @@ live only on the broker.
 5. **Host authentication.** The session host — already Entra-joined via the
    `AADLoginForWindows` extension — authenticates the connecting user against Entra ID
    directly, authorized by the `Virtual Machine User Login` role above. No Active
-   Directory Domain Services controller in the path for this pilot.
+   Directory Domain Services controller in the path for this pilot. This step depends on
+   the host pool's `customRdpProperty` including `targetisaadjoined:i:1` — without it, the
+   RDP client has no signal that the target is Azure-AD-joined and falls back to legacy
+   NTLM, which cannot authenticate a cloud-only identity at all (confirmed on this pilot:
+   see README "Troubleshooting: users can't sign in").
 6. **Profile mount.** At logon, FSLogix mounts the user's profile VHD(X) from the Azure
    Files share over SMB, using a Kerberos ticket obtained via the storage account's
    AADKERB configuration — not a stored access key.

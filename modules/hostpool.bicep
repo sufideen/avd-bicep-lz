@@ -16,6 +16,14 @@ resource hostPool 'Microsoft.DesktopVirtualization/hostPools@2023-09-05' = {
     maxSessionLimit: maxSessionLimit
     startVMOnConnect: true
     validationEnvironment: false
+    // REQUIRED for Entra-ID-joined session hosts (these VMs use AADLoginForWindows,
+    // not domain join). Without it, the RDP client has no signal that the target is
+    // Azure-AD-joined, so it never invokes Azure AD auth for the session and instead
+    // falls back to legacy NTLM — which cannot validate a cloud-only Entra identity
+    // and fails with STATUS_NO_SUCH_USER (0xC0000064), surfaced to the user as a
+    // generic "incorrect password." Confirmed on this exact pilot via the session
+    // host's Security event log (4625, Logon Type 3, Authentication Package NTLM).
+    customRdpProperty: 'targetisaadjoined:i:1'
     registrationInfo: {
       // 7-day expiry — short-lived, regenerate for production
       expirationTime: registrationTokenExpiration

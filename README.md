@@ -17,11 +17,16 @@ bug in the MSI install path; see
 before you hit the same thing.
 
 Host registration is not the same as end-user access, and this pilot hit that
-gap too: a host being `Available` only proves the *infrastructure* is up —
-actually signing in requires a second RBAC role most AVD guidance glosses
-over. See [Assign a pilot user](#assign-a-pilot-user) for the fix; it's now
-also wired into the templates as an optional deploy-time parameter so it
-doesn't have to be a remembered manual step.
+gap too, twice over: a host being `Available` only proves the
+*infrastructure* is up. First, signing in requires a second RBAC role most
+AVD guidance glosses over — see [Assign a pilot user](#assign-a-pilot-user).
+Second, even with both roles correctly assigned, the host pool was missing a
+custom RDP property required for Entra-ID-joined hosts, which silently
+downgraded every connection attempt to legacy NTLM (which can never
+authenticate a cloud-only identity) and looked exactly like a wrong password
+for every account tried — see
+[Troubleshooting: users can't sign in](#troubleshooting-users-cant-sign-in-looks-like-a-wrong-password-isnt).
+Both are now fixed in the templates.
 
 ## What this proves---
 - You can go from "AVD concept" to **running infrastructure-as-code** in hours, not weeks
@@ -196,6 +201,51 @@ Gateway or public IP, but `Test-NetConnection rdbroker.wvd.microsoft.com -Port
 working for this subscription. Don't assume that holds for yours if Microsoft
 has enforced the default-outbound-access retirement on it — check before
 ruling it out.
+
+## Troubleshooting: users can't sign in (looks like a wrong password, isn't)
+
+**Symptom:** the host pool is `Available`, both required RBAC roles (see
+"Assign a pilot user" below) are correctly assigned, Conditional Access/MFA
+completes fine, and the user still gets rejected at the session host with a
+generic "incorrect password" — for every account tried, admin or not, freshly
+created or long-standing.
+
+Before concluding it's a credential problem, get the authoritative source
+directly off the session host rather than trusting the client-side message:
+
+```powershell
+az vm run-command invoke -g rg-avd-poc -n avdpoc-avdhost-01 --command-id RunPowerShellScript `
+  --scripts "Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4625} -MaxEvents 10 | Select-Object TimeCreated, Message | Format-List"
+```
+
+If the failed-logon event (4625) shows **`Logon Type: 3`** and
+**`Authentication Package: NTLM`** with **`Sub Status: 0xC0000064`**
+(`STATUS_NO_SUCH_USER` — not `0xC000006A`, which would be an actual wrong
+password), the password was never the issue: the RDP connection fell back to
+legacy NTLM authentication instead of Azure AD authentication. NTLM has no
+way to validate a cloud-only Entra ID identity — there's no on-prem domain
+controller and no local account by that name — so it fails immediately with
+"no such user," which the client just displays as a generic sign-in failure.
+
+**Root cause:** `hostPool.bicep`'s host pool had no `customRdpProperty` set.
+Without `targetisaadjoined:i:1`, the RDP client has no signal that the
+target session host is Azure-AD-joined, so it never attempts Azure AD
+authentication for the session in the first place — it just falls back to
+whatever legacy method (NTLM here) it would use against a traditional
+domain-joined host. This is now set in `modules/hostpool.bicep`.
+
+**To apply the fix to an already-deployed host pool** (a property update, no
+VM redeploy needed):
+```powershell
+az desktopvirtualization hostpool update --name avdpoc-hp-pilot --resource-group rg-avd-poc `
+  --custom-rdp-property "targetisaadjoined:i:1"
+```
+Or redeploy `main.bicep` — the property is now baked into the template.
+
+This was the actual reason end users couldn't access the pilot desktop —
+everything else chased in earlier troubleshooting (RBAC roles, licensing,
+Conditional Access/MFA, network reachability, device join health) turned out
+to be fine; none of it was the real blocker.
 
 ## Assign a pilot user
 
