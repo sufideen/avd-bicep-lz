@@ -9,12 +9,24 @@ See [docs/architecture-reference.md](docs/architecture-reference.md) for the
 architecture diagram, user access model, an RDS↔AVD terminology map, and the
 security posture behind this build.
 
-**Status:** Phase 1 and Phase 2 are both deployed and verified working in
-`rg-avd-poc` (uksouth) — both session hosts (`avdpoc-avdhost-01`,
-`avdpoc-avdhost-02`) are registered and `Available` in the host pool. Getting
-there surfaced a real registration bug in the MSI install path; see
+**Status:** Phase 1 and Phase 2 are both deployed in `rg-avd-poc` (uksouth) —
+both session hosts (`avdpoc-avdhost-01`, `avdpoc-avdhost-02`) are registered
+and `Available` in the host pool. Getting there surfaced a real registration
+bug in the MSI install path; see
 [Troubleshooting: session hosts not registering](#troubleshooting-session-hosts-not-registering-in-the-host-pool)
 before you hit the same thing.
+
+Host registration is not the same as end-user access, and this pilot hit that
+gap too, twice over: a host being `Available` only proves the
+*infrastructure* is up. First, signing in requires a second RBAC role most
+AVD guidance glosses over — see [Assign a pilot user](#assign-a-pilot-user).
+Second, even with both roles correctly assigned, the host pool was missing a
+custom RDP property required for Entra-ID-joined hosts, which silently
+downgraded every connection attempt to legacy NTLM (which can never
+authenticate a cloud-only identity) and looked exactly like a wrong password
+for every account tried — see
+[Troubleshooting: users can't sign in](#troubleshooting-users-cant-sign-in-looks-like-a-wrong-password-isnt).
+Both are now fixed in the templates.
 
 ## What this proves---
 - You can go from "AVD concept" to **running infrastructure-as-code** in hours, not weeks
@@ -190,13 +202,150 @@ working for this subscription. Don't assume that holds for yours if Microsoft
 has enforced the default-outbound-access retirement on it — check before
 ruling it out.
 
-## Assign a pilot user
+## Troubleshooting: users can't sign in (looks like a wrong password, isn't)
+
+**Symptom:** the host pool is `Available`, both required RBAC roles (see
+"Assign a pilot user" below) are correctly assigned, Conditional Access/MFA
+completes fine, and the user still gets rejected at the session host with a
+generic "incorrect password" — for every account tried, admin or not, freshly
+created or long-standing.
+
+Before concluding it's a credential problem, get the authoritative source
+directly off the session host rather than trusting the client-side message:
 
 ```powershell
+az vm run-command invoke -g rg-avd-poc -n avdpoc-avdhost-01 --command-id RunPowerShellScript `
+  --scripts "Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4625} -MaxEvents 10 | Select-Object TimeCreated, Message | Format-List"
+```
+
+If the failed-logon event (4625) shows **`Logon Type: 3`** and
+**`Authentication Package: NTLM`** with **`Sub Status: 0xC0000064`**
+(`STATUS_NO_SUCH_USER` — not `0xC000006A`, which would be an actual wrong
+password), the password was never the issue: the RDP connection fell back to
+legacy NTLM authentication instead of Azure AD authentication. NTLM has no
+way to validate a cloud-only Entra ID identity — there's no on-prem domain
+controller and no local account by that name — so it fails immediately with
+"no such user," which the client just displays as a generic sign-in failure.
+
+**Root cause:** `hostPool.bicep`'s host pool had no `customRdpProperty` set.
+Without `targetisaadjoined:i:1`, the RDP client has no signal that the
+target session host is Azure-AD-joined, so it never attempts Azure AD
+authentication for the session in the first place — it just falls back to
+whatever legacy method (NTLM here) it would use against a traditional
+domain-joined host. This is now set in `modules/hostpool.bicep`.
+
+**To apply the fix to an already-deployed host pool** (a property update, no
+VM redeploy needed):
+```powershell
+az desktopvirtualization hostpool update --name avdpoc-hp-pilot --resource-group rg-avd-poc `
+  --custom-rdp-property "targetisaadjoined:i:1"
+```
+Or redeploy `main.bicep` — the property is now baked into the template.
+
+This was the actual reason end users couldn't access the pilot desktop —
+everything else chased in earlier troubleshooting (RBAC roles, licensing,
+Conditional Access/MFA, network reachability, device join health) turned out
+to be fine; none of it was the real blocker.
+
+## Assign a pilot user
+
+**Two separate role assignments are required — this pilot originally shipped
+with only the first, which is why the desktop appeared in a test user's feed
+but every sign-in attempt to the host itself was denied.** `Desktop
+Virtualization User` only controls what shows up in the feed; because these
+session hosts are Entra-ID-joined (`AADLoginForWindows`, not classic AD), a
+second, separate role — `Virtual Machine User Login` — is what actually lets
+the user authenticate *to the VM*. Skipping it is the single most common
+reason an AVD pilot looks fully deployed (host `Available`, user assigned)
+but end users still can't get in.
+
+```powershell
+$appGroupId = az deployment group show --resource-group rg-avd-poc --name main --query "properties.outputs.appGroupId.value" -o tsv
+
+# 1. Feed visibility — lets the desktop show up in the user's workspace
 az role assignment create `
   --assignee <user-object-id-or-upn> `
   --role "Desktop Virtualization User" `
-  --scope <appGroup resourceId output from Phase 1 deployment>
+  --scope $appGroupId
+
+# 2. VM sign-in — REQUIRED for Entra-ID-joined hosts, easy to miss because
+#    AADLoginForWindows alone does not grant it. Assign per VM (or at the
+#    resource-group scope to cover every host at once).
+az role assignment create `
+  --assignee <user-object-id-or-upn> `
+  --role "Virtual Machine User Login" `
+  --scope $(az vm show -g rg-avd-poc -n avdpoc-avdhost-01 --query id -o tsv)
+
+az role assignment create `
+  --assignee <user-object-id-or-upn> `
+  --role "Virtual Machine User Login" `
+  --scope $(az vm show -g rg-avd-poc -n avdpoc-avdhost-02 --query id -o tsv)
+```
+
+Both assignments are also now codified directly in the templates —
+`main.bicep` and `main-sessionhosts.bicep` each take an optional
+`pilotUserObjectId` parameter (plus `pilotUserPrincipalType`, default `User`)
+that wires the matching role assignment automatically on
+(re)deploy, so a future redeploy doesn't silently need this manual step
+repeated. Leave it empty (the default) to skip, or pass it explicitly:
+
+```powershell
+az deployment group create `
+  --resource-group rg-avd-poc `
+  --template-file main.bicep `
+  --parameters params/pilot.bicepparam pilotUserObjectId=<user-object-id>
+```
+
+### Granting access to more than a couple of users
+
+`pilotUserObjectId` is a single principal, fine for one or two named testers.
+Once real end-user access grows past that, prefer an Entra **security
+group** instead: both templates also take an `entraGroupObjectId` parameter
+that assigns the same two roles (`Desktop Virtualization User` on the app
+group, `Virtual Machine User Login` on each VM) to the *group* rather than an
+individual. Onboarding or offboarding a user then becomes an Entra group
+membership change — no redeploy, no new role assignment to remember.
+
+```powershell
+# One-time: create the group and grant it both roles via redeploy
+az ad group create --display-name "avd-pilot-users" --mail-nickname "avd-pilot-users"
+$groupId = az ad group show --group "avd-pilot-users" --query id -o tsv
+
+az deployment group create `
+  --resource-group rg-avd-poc `
+  --template-file main.bicep `
+  --parameters params/pilot.bicepparam entraGroupObjectId=$groupId
+
+az deployment group create `
+  --resource-group rg-avd-poc `
+  --template-file main-sessionhosts.bicep `
+  --parameters subnetId=$subnetId hostPoolName=$hostPoolName hostPoolRegistrationToken=$token adminUsername=avdlocaladmin adminPassword=$adminPassword entraGroupObjectId=$groupId
+
+# Ongoing: onboard/offboard a user by changing group membership only
+az ad group member add --group "avd-pilot-users" --member-id <user-object-id>
+az ad group member remove --group "avd-pilot-users" --member-id <user-object-id>
+```
+
+Both `pilotUserObjectId` and `entraGroupObjectId` can be set at the same
+time (e.g. a named admin tester plus the real user group) — they create
+independent role assignments, so neither one overwrites the other.
+
+### Testing sign-in with a non-admin account
+
+If sign-in fails at the session host's Windows credential prompt for an
+admin/privileged account even with a correct password, that's usually not an
+AVD or RBAC problem — it's Conditional Access or an Authentication Methods
+policy requiring phishing-resistant MFA for that account, which the embedded
+credential prompt can't satisfy. Rule this out by testing with an ordinary,
+non-admin user instead. [`create-pilot-test-user.ps1`](create-pilot-test-user.ps1)
+automates creating one: it makes an Entra user, licenses it (required before
+license assignment: sets `usageLocation`, so run it with `-ListLicensesOnly`
+first if you don't already know which SKU has spare seats), and grants it
+both AVD roles above.
+
+```powershell
+./create-pilot-test-user.ps1 -ListLicensesOnly
+./create-pilot-test-user.ps1 -LicenseSkuPartNumber <sku-from-above>
 ```
 
 User connects via https://client.wvd.microsoft.com/arm/webclient or the
@@ -401,3 +550,27 @@ and reference it from the code comment.
 - `az desktopvirtualization sessionhost list` isn't available in stock az CLI
   (needs the `desktopvirtualization` extension); this repo's instructions use
   a plain `az rest` call instead so there's no extension dependency.
+- **By design, not a bug: Global Administrator accounts cannot sign in to a
+  session host.** `sufyan@ict-cloud.solutions` (Global Administrator +
+  Identity Governance Administrator) consistently fails at the session
+  host's sign-in step with "incorrect password" even with a verified-correct
+  password, while an otherwise-identical non-admin pilot user
+  (`avdpilot-test`) connects successfully every time. Confirmed to be
+  role-specific, not account-specific: a brand-new throwaway account,
+  cloned with the same two directory roles and no prior sign-in history,
+  reproduced the identical failure immediately. Everything else was ruled
+  out first, with evidence for each: the missing `Virtual Machine User
+  Login` role (fixed, see "Assign a pilot user"); the missing
+  `customRdpProperty` causing NTLM fallback (fixed, see "Troubleshooting:
+  users can't sign in"); keyboard layout (ruled out via copy-paste); cached
+  credentials, both browser and Windows Credential Manager (checked clean);
+  and Conditional Access (the only policy in the tenant is
+  `enabledForReportingButNotEnforced`, requires only MFA, and explicitly
+  excludes this user). This lines up with Microsoft's own Privileged Access
+  Workstation guidance — Global Administrator credentials are not meant to
+  be typed into a general-purpose or virtualized session in the first
+  place, so this is arguably the platform doing its job rather than a
+  misconfiguration to fix. **No action needed**: the pilot's actual target
+  users should hold only the two AVD-scoped roles (as documented in "Assign
+  a pilot user"), never a directory admin role, and `avdpilot-test` already
+  proves that path works end-to-end.

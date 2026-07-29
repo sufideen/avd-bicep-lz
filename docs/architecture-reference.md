@@ -73,21 +73,35 @@ Reference: [Azure Virtual Desktop service architecture and resilience](https://l
 ## User access
 
 There's no RD Gateway CAP/RAP pair to configure and no local "Remote Desktop Users"
-group on each host to keep in sync. Access is a single Azure RBAC role assignment,
-scoped to the application group, plus whatever Conditional Access policy applies to the
-user's Entra identity.
+group on each host to keep in sync — but unlike a hybrid-joined host, an Entra-ID-joined
+one needs **two** separate Azure RBAC role assignments, not one, plus whatever
+Conditional Access policy applies to the user's Entra identity. This build originally
+shipped with only the first, which is exactly the gap that left the pilot's host
+reachable and registered while every real user connection was denied.
 
 ```powershell
+# 1. Feed visibility — lets the desktop show up in the user's workspace
 az role assignment create `
   --assignee <user-object-id-or-upn> `
   --role "Desktop Virtualization User" `
   --scope <application-group-resource-id>
+
+# 2. VM sign-in — the piece that's easy to miss. AADLoginForWindows makes the
+# host Entra-joined, but it does not by itself authorize any Entra identity to
+# sign in to it; that authorization is this separate role, scoped per VM (or
+# resource group, to cover every host at once).
+az role assignment create `
+  --assignee <user-object-id-or-upn> `
+  --role "Virtual Machine User Login" `
+  --scope <session-host-vm-resource-id>
 ```
 
-That role grants nothing beyond "see and use this desktop." It carries no rights over
-the host pool, the VM, or the storage account — the equivalent of RDS's "add user to the
-collection" step, but expressed as a scoped ARM role instead of a local group membership
-that lives only on the broker.
+`Desktop Virtualization User` grants nothing beyond "see and use this desktop" — no
+rights over the host pool or storage account. `Virtual Machine User Login` grants
+nothing beyond "sign in to this specific VM" — no Contributor/Reader rights over it.
+Together they're the equivalent of RDS's "add user to the collection" step, expressed
+as two narrowly scoped ARM roles instead of one local group membership that used to
+live only on the broker.
 
 1. **Sign-in.** User opens the Windows App (or `client.wvd.microsoft.com`) and
    authenticates against Microsoft Entra ID — MFA and Conditional Access apply exactly
@@ -102,7 +116,12 @@ that lives only on the broker.
    `DepthFirst` is the alternative, used during ramp-down to consolidate and free hosts).
 5. **Host authentication.** The session host — already Entra-joined via the
    `AADLoginForWindows` extension — authenticates the connecting user against Entra ID
-   directly. No Active Directory Domain Services controller in the path for this pilot.
+   directly, authorized by the `Virtual Machine User Login` role above. No Active
+   Directory Domain Services controller in the path for this pilot. This step depends on
+   the host pool's `customRdpProperty` including `targetisaadjoined:i:1` — without it, the
+   RDP client has no signal that the target is Azure-AD-joined and falls back to legacy
+   NTLM, which cannot authenticate a cloud-only identity at all (confirmed on this pilot:
+   see README "Troubleshooting: users can't sign in").
 6. **Profile mount.** At logon, FSLogix mounts the user's profile VHD(X) from the Azure
    Files share over SMB, using a Kerberos ticket obtained via the storage account's
    AADKERB configuration — not a stored access key.
@@ -110,8 +129,8 @@ that lives only on the broker.
 ### What's structurally different from an RDS access model
 
 - **No local group to reconcile.** RDS access usually ends up as some combination of AD
-  security groups and a local group on the broker or each host. Here it's one RBAC
-  assignment on one application group, auditable in the Activity Log.
+  security groups and a local group on the broker or each host. Here it's two narrowly
+  scoped RBAC assignments (application group + VM), both auditable in the Activity Log.
 - **No CAP/RAP policy pair.** Connection Authorization and Resource Authorization
   Policies on RD Gateway are replaced by a Conditional Access policy evaluated at Entra
   sign-in — before the client ever reaches the Gateway.
@@ -167,11 +186,13 @@ nothing here is a pilot-only shortcut.
   — The storage account's public network access is disabled and its ACL allows only the
   session-host subnet. Hosts authenticate to the share with a Kerberos ticket from Entra
   ID — no storage account key is ever handed to a session host.
-- **Least-privilege RBAC on the user path** *(Desktop Virtualization User)* — Users are
-  scoped to `Desktop Virtualization User` on a single application group — not host pool
-  admin, not contributor on the resource group. Azure Virtual Desktop ships separate
-  Contributor/Reader roles per host pool, per application group, and per workspace
-  specifically so administrative and end-user access never have to share a role.
+- **Least-privilege RBAC on the user path** *(Desktop Virtualization User &middot;
+  Virtual Machine User Login)* — Users hold exactly two roles: `Desktop Virtualization
+  User` on the application group (feed visibility) and `Virtual Machine User Login` on
+  each session host (sign-in rights) — not host pool admin, not Contributor on the
+  resource group or the VM. Azure Virtual Desktop ships separate Contributor/Reader
+  roles per host pool, per application group, and per workspace specifically so
+  administrative and end-user access never have to share a role.
 - **Static analysis gates every template change** *(Checkov &middot; PSRule for Azure)* —
   Every pull request touching Bicep runs Checkov (hard gate — fails the build) and
   PSRule for Azure's Well-Architected security-pillar ruleset against the templates

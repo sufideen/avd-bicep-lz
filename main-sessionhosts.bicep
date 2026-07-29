@@ -32,6 +32,15 @@ param adminUsername string
 @secure()
 param adminPassword string
 
+@description('Entra object ID of a single pilot user (or group) to grant sign-in rights on the session hosts. This is required in addition to Desktop Virtualization User (see main.bicep pilotUserObjectId) — without it, users see the desktop in their feed but are denied at the actual host sign-in step. Leave empty to skip.')
+param pilotUserObjectId string = ''
+
+@allowed(['User', 'Group', 'ServicePrincipal'])
+param pilotUserPrincipalType string = 'User'
+
+@description('Entra object ID of a security group whose members should all get sign-in rights on the session hosts — the recommended way to grant access once there\'s more than a couple of pilot users. Leave empty to skip. Must match the entraGroupObjectId passed to main.bicep so both required roles land on the same group.')
+param entraGroupObjectId string = ''
+
 module sessionHosts 'modules/sessionHosts.bicep' = {
   name: 'deploy-sessionhosts'
   params: {
@@ -46,6 +55,9 @@ module sessionHosts 'modules/sessionHosts.bicep' = {
     hostPoolRegistrationToken: hostPoolRegistrationToken
     dscModulesUrl: dscModulesUrl
     registrationMethod: registrationMethod
+    pilotUserObjectId: pilotUserObjectId
+    pilotUserPrincipalType: pilotUserPrincipalType
+    entraGroupObjectId: entraGroupObjectId
   }
 }
 
