@@ -12,6 +12,12 @@ param adminPassword string
 param hostPoolName string
 param hostPoolRegistrationToken string
 
+@description('Entra object ID of the pilot user (or group) to grant sign-in rights on the session hosts. This is the role that actually lets an Entra-joined VM authenticate the user — Desktop Virtualization User (see modules/workspace.bicep) only controls feed visibility and is not sufficient on its own. Leave empty to skip.')
+param pilotUserObjectId string = ''
+
+@allowed(['User', 'Group', 'ServicePrincipal'])
+param pilotUserPrincipalType string = 'User'
+
 @description('Current DSC configuration zip URL — Microsoft rotates this periodically. If deploy fails with BlobNotFound, get the current value from: Host pool > Session hosts > + Add > Review+create > Download a template for automation, then search that JSON for modulesUrl. Only used if registrationMethod is "dsc".')
 param dscModulesUrl string = 'https://wvdportalstorageblob.blob.core.windows.net/galleryartifacts/Configuration_10-19-2022.zip'
 
@@ -79,6 +85,21 @@ resource vms 'Microsoft.Compute/virtualMachines@2023-09-01' = [for i in range(0,
         }
       ]
     }
+  }
+}]
+
+// Virtual Machine User Login — built-in role ID, scoped per VM. Required for
+// Entra-ID-joined hosts: without it, the user's desktop shows up in the feed
+// (via Desktop Virtualization User, see modules/workspace.bicep) but sign-in
+// to the host itself is denied. This is the piece that's easy to miss because
+// AADLoginForWindows alone doesn't grant it.
+resource pilotUserVmLoginAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for i in range(0, vmCount): if (!empty(pilotUserObjectId)) {
+  name: guid(vms[i].id, pilotUserObjectId, 'VirtualMachineUserLogin')
+  scope: vms[i]
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'fb879df8-f326-4884-b1cf-06f3ad86be52')
+    principalId: pilotUserObjectId
+    principalType: pilotUserPrincipalType
   }
 }]
 

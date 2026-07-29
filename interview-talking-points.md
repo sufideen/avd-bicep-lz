@@ -25,7 +25,8 @@ useless without a place to put the user's profile.
 - Storage locked to the pilot subnet via network ACL (with Private Endpoint as
   the stated production upgrade)
 - Least-privilege RBAC: users get Desktop Virtualization User scoped to the
-  app group only, not host pool admin
+  app group (feed visibility) plus Virtual Machine User Login scoped to each
+  host (sign-in rights) — never host pool admin or VM Contributor
 
 ## If asked about cost
 Point to the scaling plan: ramp-up 07:30, peak 09:00, ramp-down 17:30, off-peak

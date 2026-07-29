@@ -9,12 +9,19 @@ See [docs/architecture-reference.md](docs/architecture-reference.md) for the
 architecture diagram, user access model, an RDS↔AVD terminology map, and the
 security posture behind this build.
 
-**Status:** Phase 1 and Phase 2 are both deployed and verified working in
-`rg-avd-poc` (uksouth) — both session hosts (`avdpoc-avdhost-01`,
-`avdpoc-avdhost-02`) are registered and `Available` in the host pool. Getting
-there surfaced a real registration bug in the MSI install path; see
+**Status:** Phase 1 and Phase 2 are both deployed in `rg-avd-poc` (uksouth) —
+both session hosts (`avdpoc-avdhost-01`, `avdpoc-avdhost-02`) are registered
+and `Available` in the host pool. Getting there surfaced a real registration
+bug in the MSI install path; see
 [Troubleshooting: session hosts not registering](#troubleshooting-session-hosts-not-registering-in-the-host-pool)
 before you hit the same thing.
+
+Host registration is not the same as end-user access, and this pilot hit that
+gap too: a host being `Available` only proves the *infrastructure* is up —
+actually signing in requires a second RBAC role most AVD guidance glosses
+over. See [Assign a pilot user](#assign-a-pilot-user) for the fix; it's now
+also wired into the templates as an optional deploy-time parameter so it
+doesn't have to be a remembered manual step.
 
 ## What this proves---
 - You can go from "AVD concept" to **running infrastructure-as-code** in hours, not weeks
@@ -192,13 +199,51 @@ ruling it out.
 
 ## Assign a pilot user
 
+**Two separate role assignments are required — this pilot originally shipped
+with only the first, which is why the desktop appeared in a test user's feed
+but every sign-in attempt to the host itself was denied.** `Desktop
+Virtualization User` only controls what shows up in the feed; because these
+session hosts are Entra-ID-joined (`AADLoginForWindows`, not classic AD), a
+second, separate role — `Virtual Machine User Login` — is what actually lets
+the user authenticate *to the VM*. Skipping it is the single most common
+reason an AVD pilot looks fully deployed (host `Available`, user assigned)
+but end users still can't get in.
+
 ```powershell
 $appGroupId = az deployment group show --resource-group rg-avd-poc --name main --query "properties.outputs.appGroupId.value" -o tsv
 
+# 1. Feed visibility — lets the desktop show up in the user's workspace
 az role assignment create `
   --assignee <user-object-id-or-upn> `
   --role "Desktop Virtualization User" `
   --scope $appGroupId
+
+# 2. VM sign-in — REQUIRED for Entra-ID-joined hosts, easy to miss because
+#    AADLoginForWindows alone does not grant it. Assign per VM (or at the
+#    resource-group scope to cover every host at once).
+az role assignment create `
+  --assignee <user-object-id-or-upn> `
+  --role "Virtual Machine User Login" `
+  --scope $(az vm show -g rg-avd-poc -n avdpoc-avdhost-01 --query id -o tsv)
+
+az role assignment create `
+  --assignee <user-object-id-or-upn> `
+  --role "Virtual Machine User Login" `
+  --scope $(az vm show -g rg-avd-poc -n avdpoc-avdhost-02 --query id -o tsv)
+```
+
+Both assignments are also now codified directly in the templates —
+`main.bicep` and `main-sessionhosts.bicep` each take an optional
+`pilotUserObjectId` parameter (plus `pilotUserPrincipalType`, default `User`)
+that wires the matching role assignment automatically on
+(re)deploy, so a future redeploy doesn't silently need this manual step
+repeated. Leave it empty (the default) to skip, or pass it explicitly:
+
+```powershell
+az deployment group create `
+  --resource-group rg-avd-poc `
+  --template-file main.bicep `
+  --parameters params/pilot.bicepparam pilotUserObjectId=<user-object-id>
 ```
 
 User connects via https://client.wvd.microsoft.com/arm/webclient or the

@@ -19,6 +19,12 @@ param subnetAddressPrefix string = '10.50.0.0/25'
 @description('Max session limit per host (pooled, BreadthFirst)')
 param maxSessionLimit int = 4
 
+@description('Entra object ID of the pilot user (or group) to grant AVD feed access. Leave empty to skip — also see main-sessionhosts.bicep pilotUserObjectId, which grants the separate role needed to actually sign in to the host.')
+param pilotUserObjectId string = ''
+
+@allowed(['User', 'Group', 'ServicePrincipal'])
+param pilotUserPrincipalType string = 'User'
+
 // 1. Networking
 module networking 'modules/networking.bicep' = {
   name: 'deploy-networking'
@@ -57,6 +63,8 @@ module workspace 'modules/workspace.bicep' = {
     namePrefix: namePrefix
     location: location
     hostPoolId: hostpool.outputs.hostPoolId
+    pilotUserObjectId: pilotUserObjectId
+    pilotUserPrincipalType: pilotUserPrincipalType
   }
 }
 
