@@ -12,11 +12,14 @@ param adminPassword string
 param hostPoolName string
 param hostPoolRegistrationToken string
 
-@description('Entra object ID of the pilot user (or group) to grant sign-in rights on the session hosts. This is the role that actually lets an Entra-joined VM authenticate the user — Desktop Virtualization User (see modules/workspace.bicep) only controls feed visibility and is not sufficient on its own. Leave empty to skip.')
+@description('Entra object ID of a single pilot user (or group) to grant sign-in rights on the session hosts. This is the role that actually lets an Entra-joined VM authenticate the user — Desktop Virtualization User (see modules/workspace.bicep) only controls feed visibility and is not sufficient on its own. Leave empty to skip.')
 param pilotUserObjectId string = ''
 
 @allowed(['User', 'Group', 'ServicePrincipal'])
 param pilotUserPrincipalType string = 'User'
+
+@description('Entra object ID of a security group whose members should all get sign-in rights on the session hosts, e.g. the group backing an ongoing (non-pilot-scale) rollout. Leave empty to skip. Prefer this over pilotUserObjectId once there\'s more than a couple of test users — group membership changes then handle access, no redeploy needed.')
+param entraGroupObjectId string = ''
 
 @description('Current DSC configuration zip URL — Microsoft rotates this periodically. If deploy fails with BlobNotFound, get the current value from: Host pool > Session hosts > + Add > Review+create > Download a template for automation, then search that JSON for modulesUrl. Only used if registrationMethod is "dsc".')
 param dscModulesUrl string = 'https://wvdportalstorageblob.blob.core.windows.net/galleryartifacts/Configuration_10-19-2022.zip'
@@ -100,6 +103,16 @@ resource pilotUserVmLoginAccess 'Microsoft.Authorization/roleAssignments@2022-04
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'fb879df8-f326-4884-b1cf-06f3ad86be52')
     principalId: pilotUserObjectId
     principalType: pilotUserPrincipalType
+  }
+}]
+
+resource groupVmLoginAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for i in range(0, vmCount): if (!empty(entraGroupObjectId)) {
+  name: guid(vms[i].id, entraGroupObjectId, 'VirtualMachineUserLoginGroup')
+  scope: vms[i]
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'fb879df8-f326-4884-b1cf-06f3ad86be52')
+    principalId: entraGroupObjectId
+    principalType: 'Group'
   }
 }]
 

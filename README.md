@@ -246,6 +246,40 @@ az deployment group create `
   --parameters params/pilot.bicepparam pilotUserObjectId=<user-object-id>
 ```
 
+### Granting access to more than a couple of users
+
+`pilotUserObjectId` is a single principal, fine for one or two named testers.
+Once real end-user access grows past that, prefer an Entra **security
+group** instead: both templates also take an `entraGroupObjectId` parameter
+that assigns the same two roles (`Desktop Virtualization User` on the app
+group, `Virtual Machine User Login` on each VM) to the *group* rather than an
+individual. Onboarding or offboarding a user then becomes an Entra group
+membership change — no redeploy, no new role assignment to remember.
+
+```powershell
+# One-time: create the group and grant it both roles via redeploy
+az ad group create --display-name "avd-pilot-users" --mail-nickname "avd-pilot-users"
+$groupId = az ad group show --group "avd-pilot-users" --query id -o tsv
+
+az deployment group create `
+  --resource-group rg-avd-poc `
+  --template-file main.bicep `
+  --parameters params/pilot.bicepparam entraGroupObjectId=$groupId
+
+az deployment group create `
+  --resource-group rg-avd-poc `
+  --template-file main-sessionhosts.bicep `
+  --parameters subnetId=$subnetId hostPoolName=$hostPoolName hostPoolRegistrationToken=$token adminUsername=avdlocaladmin adminPassword=$adminPassword entraGroupObjectId=$groupId
+
+# Ongoing: onboard/offboard a user by changing group membership only
+az ad group member add --group "avd-pilot-users" --member-id <user-object-id>
+az ad group member remove --group "avd-pilot-users" --member-id <user-object-id>
+```
+
+Both `pilotUserObjectId` and `entraGroupObjectId` can be set at the same
+time (e.g. a named admin tester plus the real user group) — they create
+independent role assignments, so neither one overwrites the other.
+
 User connects via https://client.wvd.microsoft.com/arm/webclient or the
 Windows App client, signs in with Entra ID, sees the pilot desktop.
 
