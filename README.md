@@ -211,6 +211,24 @@ git push -u origin main
 ```
 
 **2. Create an Entra ID app registration for OIDC federation**
+
+> **The subject claim must match what GitHub actually sends — don't guess it
+> from the "standard" `repo:OWNER/REPO:ref:refs/heads/BRANCH` pattern.** Two
+> things bit this exact repo:
+> 1. The `deploy` job sets `environment: production` (for the manual approval
+>    gate). Any job with an `environment:` key gets an OIDC subject of
+>    `repo:OWNER/REPO:environment:ENV_NAME` — **not** the ref-based one —
+>    regardless of which branch/event triggered it.
+> 2. Some GitHub accounts/orgs have OIDC subject-claim customization enabled,
+>    which qualifies the owner and repo with their numeric IDs:
+>    `repo:owner@OWNER_ID/repo@REPO_ID:...` instead of plain names. You can't
+>    tell this is on ahead of time — it only shows up as a mismatch.
+>
+> If login fails with `AADSTS700213: No matching federated identity record
+> found for presented assertion subject '...'`, the error **tells you the
+> exact subject GitHub presented** — copy it verbatim into a new federated
+> credential rather than reasoning about what it "should" be.
+
 ```powershell
 az ad app create --display-name "avd-bicep-lz-github-oidc"
 # note the appId from the output — this is your AZURE_CLIENT_ID
@@ -218,25 +236,39 @@ az ad app create --display-name "avd-bicep-lz-github-oidc"
 $APP_ID = "<appId from above>"
 az ad sp create --id $APP_ID
 
-# Federated credential trusting GitHub Actions on your main branch
+# Credential for the deploy job (environment: production) — subject uses
+# "environment:production", not "ref:refs/heads/main", because the job
+# declares an environment:
 az ad app federated-credential create `
   --id $APP_ID `
-  --parameters '{\"name\": \"avd-bicep-lz-main\", \"issuer\": \"https://token.actions.githubusercontent.com\", \"subject\": \"repo:<your-github-username>/avd-bicep-lz:ref:refs/heads/main\", \"audiences\": [\"api://AzureADTokenExchange\"]}'
+  --parameters '{\"name\": \"avd-bicep-lz-deploy-env\", \"issuer\": \"https://token.actions.githubusercontent.com\", \"subject\": \"repo:<owner>/<repo>:environment:production\", \"audiences\": [\"api://AzureADTokenExchange\"]}'
 
-# Also add one for pull_request events if you want What-If to run on PRs from forks/branches:
+# Credential for the what-if job (plain pull_request, no environment):
 az ad app federated-credential create `
   --id $APP_ID `
-  --parameters '{\"name\": \"avd-bicep-lz-pr\", \"issuer\": \"https://token.actions.githubusercontent.com\", \"subject\": \"repo:<your-github-username>/avd-bicep-lz:pull_request\", \"audiences\": [\"api://AzureADTokenExchange\"]}'
+  --parameters '{\"name\": \"avd-bicep-lz-pr\", \"issuer\": \"https://token.actions.githubusercontent.com\", \"subject\": \"repo:<owner>/<repo>:pull_request\", \"audiences\": [\"api://AzureADTokenExchange\"]}'
 ```
 > PowerShell needs the inner double-quotes escaped (`\"`) inside a single-quoted
 > JSON string — that's a Windows/PowerShell quirk, not an az CLI thing.
+>
+> If the first `deploy` run fails on OIDC login, read the `AADSTS700213`
+> error's `subject` value and re-create the `avd-bicep-lz-deploy-env`
+> credential with that exact string — on this repo it turned out to be
+> `repo:sufideen@2108143/avd-bicep-lz@1315582616:environment:production`, not
+> the plain-name form above.
 
-**3. Grant the app Contributor on the target resource group (or subscription for the first run, since the workflow creates the RG)**
+**3. Grant the app Contributor on the target resource group**
+
+If `rg-avd-poc` doesn't exist yet, scope to the subscription for the first run
+instead (the workflow's `az group create` step needs subscription-level
+rights to create it) and narrow to the RG afterward. If it already exists —
+as it does once you've run Phase 1 manually per this README — scope directly
+to the RG; no need for subscription-wide Contributor:
 ```powershell
 az role assignment create `
   --assignee $APP_ID `
   --role Contributor `
-  --scope /subscriptions/<your-subscription-id>
+  --scope /subscriptions/<your-subscription-id>/resourceGroups/rg-avd-poc
 ```
 
 **4. Add repo secrets** (Settings → Secrets and variables → Actions)
