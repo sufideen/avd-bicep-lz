@@ -7,6 +7,10 @@ param subnetId string
 var storageAccountName = toLower('${take(namePrefix, 6)}fsl${uniqueString(resourceGroup().id)}')
 
 resource storage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
+  // Full rationale in README "Security scanning suppressions" - keep skip
+  // comments to one line each, see note in modules/sessionHosts.bicep.
+  // checkov:skip=CKV_AZURE_43:False positive - computed name is always 22 valid chars.
+  // checkov:skip=CKV_AZURE_206:LRS is deliberate for a same-day pilot to minimize cost.
   name: storageAccountName
   location: location
   kind: 'FileStorage'
@@ -24,6 +28,11 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
     }
     networkAcls: {
       defaultAction: 'Deny'
+      // Lets first-party Azure services (backup, Defender for Storage, etc.)
+      // reach the account under their own RBAC/managed-identity auth even
+      // though public/other-network access is denied — doesn't weaken the
+      // subnet-only access control above (CKV_AZURE_36).
+      bypass: 'AzureServices'
       virtualNetworkRules: [
         {
           id: subnetId

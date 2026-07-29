@@ -11,4 +11,5 @@
 # OS/editor noise
 .DS_Store
 .vscode/
+.claude/
 *.swp

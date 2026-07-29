@@ -38,6 +38,15 @@ resource nics 'Microsoft.Network/networkInterfaces@2023-11-01' = [for i in range
 }]
 
 resource vms 'Microsoft.Compute/virtualMachines@2023-09-01' = [for i in range(0, vmCount): {
+  // Full rationale for each skip below is in README "Security scanning
+  // suppressions" - Checkov's Bicep grammar can't reliably parse multi-line
+  // wrapped comments after a skip directive (confirmed: a wrapped
+  // continuation line broke the parser silently), so keep each to one line.
+  // checkov:skip=CKV_AZURE_50:Required for AVD - Entra join and agent install extensions.
+  // checkov:skip=CKV_AZURE_178:Not applicable - Windows VM, not Linux.
+  // checkov:skip=CKV_AZURE_1:Not applicable - Windows VM uses adminUsername/adminPassword by design.
+  // checkov:skip=CKV_AZURE_97:Encryption at Host deferred - subscription feature not registered (owner decision).
+  // checkov:skip=CKV_AZURE_151:Azure Disk Encryption deferred to production - see README.
   name: '${namePrefix}-avdhost-${padLeft(i + 1, 2, '0')}'
   location: location
   properties: {

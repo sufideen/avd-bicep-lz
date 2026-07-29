@@ -297,10 +297,53 @@ approval before `az deployment group create` runs — the same staged-apply
 pattern as your other Bicep repos.
 
 **How it runs**
-- Open a PR touching any `.bicep`/`.bicepparam` file → `what-if` job runs automatically, shows the plan as a check on the PR
-- Merge to `main` → `deploy` job waits for your approval in the `production` environment, then applies
+- Open a PR touching any `.bicep`/`.bicepparam` file → `security-scan` and
+  `what-if` jobs run automatically, both show as checks on the PR
+- Merge to `main` → `security-scan` runs again (catches anything that
+  changed between PR review and merge), then `deploy` waits for your
+  approval in the `production` environment, then applies
 
+## Security scanning
 
+Every PR and push runs a `security-scan` job with two static-analysis tools
+against the Bicep templates — no Azure credentials needed, so it runs even on
+forked-repo PRs:
+
+- **[Checkov](https://www.checkov.io/)** (`bridgecrewio/checkov-action`) —
+  general IaC misconfiguration scanning. **Hard gate**: it fails the build.
+- **[PSRule for Azure](https://azure.github.io/PSRule.Rules.Azure/)**
+  (`microsoft/ps-rule`) — Azure Well-Architected Framework security-pillar
+  rules. Currently **non-blocking** (`continueOnError: true`) — see the
+  `TODO` in `deploy-avd.yml`: it couldn't be validated locally in the
+  environment this was built in (PSRule's Bicep expansion needs a standalone
+  `bicep` binary on PATH; only `az bicep` was available there), so the first
+  real CI run needs a human to review its findings before it's safe to flip
+  to blocking. Do that before relying on it as a gate.
+
+### Security scanning suppressions
+
+Checkov was run locally against this repo, and every finding was triaged —
+fixed if it was a real, cheap fix; suppressed inline (`// checkov:skip=...`
+comments in the resource body, with a one-line reason) if it was a false
+positive or a documented pilot-scope tradeoff. Current suppressions:
+
+| Check | Resource | Why suppressed |
+|---|---|---|
+| `CKV_AZURE_43` (storage naming rules) | `fslogixStorage.bicep` storage account | False positive — the name is built from `take()`/`uniqueString()`, which Checkov's static analysis can't evaluate; the actual deployed name (`avdpocfsld5ntrmzyh2uvu`) is a valid 22-char lowercase-alphanumeric name |
+| `CKV_AZURE_206` (storage replication) | same | LRS is a deliberate pilot/cost tradeoff — see "Known limitations" |
+| `CKV_AZURE_50` (VM extensions present) | `sessionHosts.bicep` VMs | Required, not incidental — `AADLoginForWindows` and the AVD agent installer *are* how a host joins Entra and registers; there's no extension-free path for AVD |
+| `CKV_AZURE_178`, `CKV_AZURE_1` (Linux SSH-key auth) | same | Not applicable — these are Windows VMs (marketplace `win11-23h2-avd` image); the checks are Linux-specific and misfire on any Windows VM resource |
+| `CKV_AZURE_97` (Encryption at Host) | same | Deferred — needs the `Microsoft.Compute/EncryptionAtHost` feature registered on the subscription first (a subscription-wide change); owner decision to defer rather than register it for a same-day pilot |
+| `CKV_AZURE_151` (Azure Disk Encryption) | same | Deferred to production — see "Deferred to production" below. Needs a Key Vault + the ADE extension, a bigger lift than a pilot warrants; disks already get platform-managed encryption at rest by default regardless |
+
+**Note for anyone editing these `checkov:skip` comments:** keep each one to
+a single line. Checkov's Bicep grammar can't reliably parse a multi-line
+wrapped comment following a skip directive — it silently fails to parse the
+*entire resource* (reports it as a parsing error, with zero checks run
+against it) if a continuation line trips its parser. Confirmed while adding
+these; a wrapped line starting with `(` was enough to break it. If you need
+more explanation than fits on one line, put it here in the README instead
+and reference it from the code comment.
 
 | Time | Task |
 |---|---|

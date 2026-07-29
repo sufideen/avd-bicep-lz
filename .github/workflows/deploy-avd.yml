@@ -32,6 +32,40 @@ env:
   LOCATION: uksouth
 
 jobs:
+  security-scan:
+    # Runs on both PR and push so a regression introduced after a PR was
+    # reviewed (e.g. a second commit, or a direct push) still gets caught
+    # before deploy — see `needs: security-scan` on the deploy job below.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkov (IaC misconfiguration scan)
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: bicep
+          quiet: true
+          # Hard gate: findings here were triaged during rollout — real ones
+          # fixed, false positives / deliberate pilot tradeoffs suppressed
+          # inline (see modules/*.bicep `checkov:skip` comments and README
+          # "Security scanning suppressions"). A regression should fail CI.
+          soft_fail: false
+
+      - name: PSRule for Azure (Well-Architected security baseline)
+        uses: microsoft/ps-rule@v2.9.0
+        with:
+          modules: PSRule.Rules.Azure
+          baseline: Azure.Pillar.Security
+          inputPath: main.bicep
+          outcome: Fail
+          # TODO: flip to false once the first CI run's findings have been
+          # triaged and fixed/suppressed the same way Checkov's were — this
+          # couldn't be validated locally in this environment (no standalone
+          # bicep binary for PSRule's Bicep expansion; only `az bicep` was
+          # available), so don't let an unreviewed first run block deploys.
+          continueOnError: true
+
   what-if:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -58,6 +92,7 @@ jobs:
 
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: security-scan
     runs-on: ubuntu-latest
     environment: production   # gives you a manual approval gate in repo settings
     steps:
