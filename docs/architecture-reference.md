@@ -1,9 +1,10 @@
 # Azure Virtual Desktop — Architecture & Access Reference
 
 A working reference build — one host pool, FSLogix profile storage, autoscaling, and two
-Entra-joined session hosts — documented here as the architecture, access model, and
-terminology map an infrastructure engineer coming from Remote Desktop Services needs to
-operate it.
+Entra-joined session hosts — documented here for organizations evaluating Azure Virtual
+Desktop at enterprise scale: the architecture, the access model, a terminology map for
+teams whose infrastructure today is Remote Desktop Services, and the security posture a
+production rollout would carry forward from this pilot.
 
 | | |
 |---|---|

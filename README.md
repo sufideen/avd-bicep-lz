@@ -1,9 +1,11 @@
-# avd-bicep-lz — AVD Pilot POC
+# avd-bicep-lz — AVD Enterprise Pilot (Proof of Concept)
 
-A working, deployable Bicep POC: 1 host pool, 2 pilot session hosts, FSLogix
-profile storage, a scaling plan, and network isolation. Scoped deliberately
-small (pilot, not production) to be buildable and explainable in a single
-focused session.
+A working, deployable Bicep proof-of-concept for organizations evaluating a
+move from on-premises Remote Desktop Services (RDS) to Azure Virtual Desktop:
+1 host pool, 2 pilot session hosts, FSLogix profile storage, a scaling plan,
+and network isolation. Scoped deliberately small — a pilot, not a production
+rollout — so it's fast to stand up, walk through, and use as a concrete
+starting point for scoping an enterprise adoption.
 
 See [docs/architecture-reference.md](docs/architecture-reference.md) for the
 architecture diagram, user access model, an RDS↔AVD terminology map, and the
@@ -16,15 +18,20 @@ there surfaced a real registration bug in the MSI install path; see
 [Troubleshooting: session hosts not registering](#troubleshooting-session-hosts-not-registering-in-the-host-pool)
 before you hit the same thing.
 
-## What this proves---
-- You can go from "AVD concept" to **running infrastructure-as-code** in hours, not weeks
-- You understand the AVD-specific pieces that don't exist in classic RDS: host pool
-  registration tokens, FSLogix Kerberos auth on Azure Files, autoscale plans
-- You default to security-conscious choices even at pilot scale: no public IP/inbound
-  RDP on hosts, Entra ID join (no AD DS dependency), storage locked to the VNet
-- You know what's *deliberately deferred* for a pilot vs what's required for production
-  (see "Deferred to production" below) — this is the SME judgment call, not just
-  code output
+## What this pilot demonstrates
+- An AVD environment can go from concept to **running infrastructure-as-code**
+  in hours, not weeks — a realistic timeline for the pilot phase of an
+  enterprise adoption plan
+- The AVD-specific pieces that don't exist in classic RDS are addressed, not
+  glossed over: host pool registration tokens, FSLogix Kerberos auth on Azure
+  Files, autoscale plans
+- Security-conscious defaults hold even at pilot scale: no public IP/inbound
+  RDP on hosts, Entra ID join (no AD DS dependency), storage locked to the
+  VNet — the same controls a production rollout needs, not shortcuts that get
+  dropped later
+- What's *deliberately deferred* for a pilot vs what's required for production
+  is made explicit (see "Roadmap to production scale" below) — an honest
+  scoping baseline rather than an oversold demo
 
 ## Deploy (two phases — the host pool registration token can't be reliably
 ## read back inside the same deployment that creates it, so session hosts are
@@ -298,7 +305,7 @@ az role assignment create `
 Settings → Environments → New environment → `production` → add yourself as a
 required reviewer. This means every merge to `main` pauses for your manual
 approval before `az deployment group create` runs — the same staged-apply
-pattern as your other Bicep repos.
+pattern recommended for any production Azure landing zone rollout.
 
 **How it runs**
 - Open a PR touching any `.bicep`/`.bicepparam` file → `security-scan` and
@@ -338,7 +345,7 @@ positive or a documented pilot-scope tradeoff. Current suppressions:
 | `CKV_AZURE_50` (VM extensions present) | `sessionHosts.bicep` VMs | Required, not incidental — `AADLoginForWindows` and the AVD agent installer *are* how a host joins Entra and registers; there's no extension-free path for AVD |
 | `CKV_AZURE_178`, `CKV_AZURE_1` (Linux SSH-key auth) | same | Not applicable — these are Windows VMs (marketplace `win11-23h2-avd` image); the checks are Linux-specific and misfire on any Windows VM resource |
 | `CKV_AZURE_97` (Encryption at Host) | same | Deferred — needs the `Microsoft.Compute/EncryptionAtHost` feature registered on the subscription first (a subscription-wide change); owner decision to defer rather than register it for a same-day pilot |
-| `CKV_AZURE_151` (Azure Disk Encryption) | same | Deferred to production — see "Deferred to production" below. Needs a Key Vault + the ADE extension, a bigger lift than a pilot warrants; disks already get platform-managed encryption at rest by default regardless |
+| `CKV_AZURE_151` (Azure Disk Encryption) | same | Deferred to production — see "Roadmap to production scale" below. Needs a Key Vault + the ADE extension, a bigger lift than a pilot warrants; disks already get platform-managed encryption at rest by default regardless |
 
 **Note for anyone editing these `checkov:skip` comments:** keep each one to
 a single line. Checkov's Bicep grammar can't reliably parse a multi-line
@@ -358,9 +365,15 @@ and reference it from the code comment.
 | 3:45–4:15 | Scaling plan module, attach to host pool |
 | 4:15–4:45 | Assign pilot user, test end-to-end login via web client |
 | 4:45–5:30 | RBAC/least-privilege pass (Desktop Virtualization User role scoped to app group only), NSG review |
-| 5:30–6:00 | README + this talking points doc; capture screenshots of working session for the interview |
+| 5:30–6:00 | README and supporting docs; capture screenshots of the working session |
 
-## Deferred to production (say this explicitly in the interview — it shows judgment)
+Indicative build effort only — a useful planning input when scoping a client's
+own pilot, not a fixed quote.
+
+## Roadmap to production scale
+
+What's out of scope for a pilot, and what a production engagement would need
+to add:
 - **Golden image pipeline** (Azure Compute Gallery + Image Builder) — pilot uses
   marketplace image directly to save build time; production needs a versioned,
   patched, FSLogix-preinstalled image
@@ -377,12 +390,12 @@ and reference it from the code comment.
 - **MSIX app attach** — not needed for a 2-user desktop pilot, becomes relevant
   once app delivery scales beyond what's baked into the image
 - **Multi-host-pool segmentation by persona/department** — single pool is fine
-  for a pilot; production plan (1,000 users) splits by persona as discussed
-  in the wider build plan
+  for a pilot; at production scale (1,000+ users) this splits by persona or
+  department instead of one shared pool
 - **Landing zone integration** — this pilot's VNet is standalone by design to
-  keep the build scoped; production places it as a spoke peered to the
-  existing hub (see `azl-bicepdeploy`), consuming shared egress/firewall,
-  centralized DNS, and Private DNS zones for the FSLogix Private Endpoint
+  keep the build scoped; production places it as a spoke peered to an
+  existing hub landing zone, consuming shared egress/firewall, centralized
+  DNS, and Private DNS zones for the FSLogix Private Endpoint
 
 ## Known limitations of this POC
 - Local admin credentials passed via parameter — for anything beyond a same-day
