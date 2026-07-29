@@ -193,10 +193,12 @@ ruling it out.
 ## Assign a pilot user
 
 ```powershell
+$appGroupId = az deployment group show --resource-group rg-avd-poc --name main --query "properties.outputs.appGroupId.value" -o tsv
+
 az role assignment create `
   --assignee <user-object-id-or-upn> `
   --role "Desktop Virtualization User" `
-  --scope <appGroup resourceId output from Phase 1 deployment>
+  --scope $appGroupId
 ```
 
 User connects via https://client.wvd.microsoft.com/arm/webclient or the

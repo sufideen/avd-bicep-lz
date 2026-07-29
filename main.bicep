@@ -72,5 +72,6 @@ module scalingPlan 'modules/scalingPlan.bicep' = {
 
 output hostPoolName string = hostpool.outputs.hostPoolName
 output workspaceName string = workspace.outputs.workspaceName
+output appGroupId string = workspace.outputs.appGroupId
 output fslogixStorageAccount string = fslogix.outputs.storageAccountName
 output subnetId string = networking.outputs.subnetId
