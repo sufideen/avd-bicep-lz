@@ -117,6 +117,36 @@ A healthy, registered host looks like `"status": "Available"` with a recent
 `HealthCheckSucceeded`. If the array comes back empty (`"value": []`) after
 15+ minutes, see the troubleshooting section below.
 
+## Teardown billable items (stop the pilot from costing money)
+
+The only things in `rg-avd-poc` that bill while idle are **compute and
+storage**: the two session host VMs (+ their OS disks) and the FSLogix
+Premium Files storage account (Premium Files bills for provisioned capacity,
+not usage). The control-plane objects — host pool, workspace, application
+group, scaling plan, VNet/NSG — cost nothing sitting idle, so it's worth
+tearing down only the billable pieces and leaving the rest in place: the
+pilot stays demoable, and Phase 2 can be redeployed later without redoing
+Phase 1.
+
+```powershell
+./teardown-billable.ps1 -ResourceGroup rg-avd-poc
+```
+
+This deletes each `avdpoc-avdhost-*` VM along with its OS disk and NIC (VM
+deletion doesn't cascade to either — no `deleteOption` is set on them in
+`modules/sessionHosts.bicep`), then deletes the FSLogix storage account.
+
+To redeploy session hosts later, just rerun Phase 2 above (fetch a fresh
+registration token first — see the "redeploying rotates the token" note in
+Known limitations).
+
+If you're done with the pilot entirely and want to remove the control-plane
+objects too, delete the whole resource group instead:
+
+```powershell
+az group delete --name rg-avd-poc --yes
+```
+
 ## Troubleshooting: session hosts not registering in the host pool
 
 **Symptom:** VMs are provisioned and Entra-joined, `RDAgent` and
@@ -367,6 +397,7 @@ and reference it from the code comment.
 | 4:45–5:30 | RBAC/least-privilege pass (Desktop Virtualization User role scoped to app group only), NSG review |
 | 5:30–6:00 | README and supporting docs; capture screenshots of the working session |
 
+<<<<<<< HEAD
 Indicative build effort only — a useful planning input when scoping a client's
 own pilot, not a fixed quote.
 
@@ -374,6 +405,9 @@ own pilot, not a fixed quote.
 
 What's out of scope for a pilot, and what a production engagement would need
 to add:
+=======
+## Deferred to production :Reasons
+>>>>>>> d12e4154a56e712640c43fe4ad8f9870ed075f00
 - **Golden image pipeline** (Azure Compute Gallery + Image Builder) — pilot uses
   marketplace image directly to save build time; production needs a versioned,
   patched, FSLogix-preinstalled image
