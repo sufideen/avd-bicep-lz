@@ -318,17 +318,34 @@ az ad sp create --id $APP_ID
 # Credential for the deploy job (environment: production) — subject uses
 # "environment:production", not "ref:refs/heads/main", because the job
 # declares an environment:
-az ad app federated-credential create `
-  --id $APP_ID `
-  --parameters '{\"name\": \"avd-bicep-lz-deploy-env\", \"issuer\": \"https://token.actions.githubusercontent.com\", \"subject\": \"repo:<owner>/<repo>:environment:production\", \"audiences\": [\"api://AzureADTokenExchange\"]}'
+@'
+{
+  "name": "avd-bicep-lz-deploy-env",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:<owner>/<repo>:environment:production",
+  "audiences": ["api://AzureADTokenExchange"]
+}
+'@ | Set-Content -Path deploy-env-cred.json -Encoding utf8
+az ad app federated-credential create --id $APP_ID --parameters "@deploy-env-cred.json"
 
 # Credential for the what-if job (plain pull_request, no environment):
-az ad app federated-credential create `
-  --id $APP_ID `
-  --parameters '{\"name\": \"avd-bicep-lz-pr\", \"issuer\": \"https://token.actions.githubusercontent.com\", \"subject\": \"repo:<owner>/<repo>:pull_request\", \"audiences\": [\"api://AzureADTokenExchange\"]}'
+@'
+{
+  "name": "avd-bicep-lz-pr",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:<owner>/<repo>:pull_request",
+  "audiences": ["api://AzureADTokenExchange"]
+}
+'@ | Set-Content -Path pr-cred.json -Encoding utf8
+az ad app federated-credential create --id $APP_ID --parameters "@pr-cred.json"
 ```
-> PowerShell needs the inner double-quotes escaped (`\"`) inside a single-quoted
-> JSON string — that's a Windows/PowerShell quirk, not an az CLI thing.
+> Pass the JSON via a file (`@file.json`) rather than an inline string.
+> `az` on Windows is a `.cmd` wrapper that re-parses arguments through
+> `cmd.exe`, and PowerShell does **not** process `\"` inside single-quoted
+> strings — it passes the literal backslash through, corrupting the JSON
+> before `az` ever sees it. That surfaces as an opaque `The system cannot
+> find the file specified` error rather than a clear JSON-parsing failure.
+> The file-based form above sidesteps the quoting entirely.
 >
 > If the first `deploy` run fails on OIDC login, read the `AADSTS700213`
 > error's `subject` value and re-create the `avd-bicep-lz-deploy-env`
@@ -383,12 +400,20 @@ Settings → Environments → New environment → `production-teardown` → add
 required reviewers (can be the same people as `production`).
 
 ```powershell
-az ad app federated-credential create `
-  --id $APP_ID `
-  --parameters '{\"name\": \"avd-bicep-lz-teardown-env\", \"issuer\": \"https://token.actions.githubusercontent.com\", \"subject\": \"repo:<owner>/<repo>:environment:production-teardown\", \"audiences\": [\"api://AzureADTokenExchange\"]}'
+@'
+{
+  "name": "avd-bicep-lz-teardown-env",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:<owner>/<repo>:environment:production-teardown",
+  "audiences": ["api://AzureADTokenExchange"]
+}
+'@ | Set-Content -Path teardown-env-cred.json -Encoding utf8
+az ad app federated-credential create --id $APP_ID --parameters "@teardown-env-cred.json"
 ```
 > Same subject-claim caveats as step 2 apply — if login fails with
 > `AADSTS700213`, copy the exact subject from the error rather than guessing.
+> See the note under step 2 on why this uses a JSON file instead of an
+> inline string.
 
 **How it runs**
 - Open a PR touching any `.bicep`/`.bicepparam` file → `security-scan` and
