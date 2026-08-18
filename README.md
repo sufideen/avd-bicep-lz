@@ -174,6 +174,26 @@ recorded, approved audit trail:
 4. The job logs everything currently in the resource group, then runs
    `az group delete --name rg-avd-poc --yes` and waits for it to finish.
 
+> **If the `Delete resource group` step fails with `(AuthorizationFailed)
+> ... 'Microsoft.Resources/subscriptions/operationresults/read' over scope
+> '/subscriptions/<sub>/operationresults/<opaque-id>' ...`:** this isn't a
+> problem with the delete itself — `az group delete` issues the delete, then
+> polls the async operation's status URL to wait for completion, and that
+> status URL is a **subscription-scoped** resource
+> (`/subscriptions/<sub>/operationresults/<opId>`), not nested under
+> `resourceGroups/rg-avd-poc/...`. The app's role assignment is Contributor
+> scoped only to the `rg-avd-poc` resource group (per step 3 below —
+> deliberately narrowed after the first deploy), which doesn't cover reads
+> at the parent subscription scope. Fix by granting the app Reader at the
+> subscription scope too (least-privilege — the failing action is a read):
+> ```powershell
+> az role assignment create `
+>   --assignee $APP_ID `
+>   --role Reader `
+>   --scope /subscriptions/<your-subscription-id>
+> ```
+> Then re-run the workflow the same way.
+
 This path needs one-time setup (see "Get this into a GitHub repo with
 CI/CD" above, step 5b): a `production-teardown` GitHub environment with
 required reviewers, and its own federated credential on the Entra app
