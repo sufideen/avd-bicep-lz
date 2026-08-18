@@ -414,6 +414,13 @@ az ad app federated-credential create --id $APP_ID --parameters "@teardown-env-c
 > `AADSTS700213`, copy the exact subject from the error rather than guessing.
 > See the note under step 2 on why this uses a JSON file instead of an
 > inline string.
+>
+> **Confirmed on this repo:** the plain-name subject above does *not* work —
+> this tenant has OIDC subject-claim customization enabled (same as noted
+> for the `production` credential in step 2), so the first `teardown` run
+> failed with `AADSTS700213` until the credential's subject was recreated as
+> `repo:sufideen@2108143/avd-bicep-lz@1315582616:environment:production-teardown`.
+> Use that exact value instead of the `<owner>/<repo>` placeholder.
 
 **How it runs**
 - Open a PR touching any `.bicep`/`.bicepparam` file → `security-scan` and
