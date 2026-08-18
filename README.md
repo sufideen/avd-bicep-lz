@@ -147,6 +147,44 @@ objects too, delete the whole resource group instead:
 az group delete --name rg-avd-poc --yes
 ```
 
+## Full teardown (delete everything, including host pool/workspace/networking)
+
+Deletes the entire `rg-avd-poc` resource group — not just the billable
+VM/storage pieces `teardown-billable.ps1` handles. This is a **much bigger
+blast radius**: host pool, workspace, application group, scaling plan,
+VNet/NSG, and anything else in the RG are gone for good, and getting the
+pilot back means a full Phase 1 redeploy from scratch. Only do this when
+you're finished with the pilot entirely.
+
+**A. Locally** (no setup required beyond your own `az login`):
+```powershell
+az group delete --name rg-avd-poc --yes
+```
+
+**B. Via the "Deploy AVD Pilot" GitHub Actions workflow** — useful if you
+want the deletion to run under the same OIDC identity as CI, with a
+recorded, approved audit trail:
+
+1. Actions tab → **Deploy AVD Pilot** → **Run workflow**, branch set to `main`.
+2. In **confirm_resource_group**, type `rg-avd-poc` exactly. There's no
+   default value — if you leave it blank or mistype it, the job fails
+   immediately and nothing is deleted.
+3. Click **Run workflow**, then approve the run under the
+   `production-teardown` environment gate when prompted.
+4. The job logs everything currently in the resource group, then runs
+   `az group delete --name rg-avd-poc --yes` and waits for it to finish.
+
+This path needs one-time setup (see "Get this into a GitHub repo with
+CI/CD" above, step 5b): a `production-teardown` GitHub environment with
+required reviewers, and its own federated credential on the Entra app
+registration (subject `repo:<owner>/<repo>:environment:production-teardown`)
+— the existing deploy credential is scoped to `environment:production` and
+won't satisfy this job.
+
+This is irreversible. If you only want to stop paying while keeping the
+option to demo the pilot or continue Phase 2 later, use
+`teardown-billable.ps1` instead (above).
+
 ## Troubleshooting: session hosts not registering in the host pool
 
 **Symptom:** VMs are provisioned and Entra-joined, `RDAgent` and
@@ -336,6 +374,21 @@ Settings → Environments → New environment → `production` → add yourself 
 required reviewer. This means every merge to `main` pauses for your manual
 approval before `az deployment group create` runs — the same staged-apply
 pattern recommended for any production Azure landing zone rollout.
+
+**5b. (Optional) Set up the teardown approval gate**
+If you plan to use the GitHub Actions full-teardown path (see "Full
+teardown" below) rather than running `az group delete` locally:
+
+Settings → Environments → New environment → `production-teardown` → add
+required reviewers (can be the same people as `production`).
+
+```powershell
+az ad app federated-credential create `
+  --id $APP_ID `
+  --parameters '{\"name\": \"avd-bicep-lz-teardown-env\", \"issuer\": \"https://token.actions.githubusercontent.com\", \"subject\": \"repo:<owner>/<repo>:environment:production-teardown\", \"audiences\": [\"api://AzureADTokenExchange\"]}'
+```
+> Same subject-claim caveats as step 2 apply — if login fails with
+> `AADSTS700213`, copy the exact subject from the error rather than guessing.
 
 **How it runs**
 - Open a PR touching any `.bicep`/`.bicepparam` file → `security-scan` and
