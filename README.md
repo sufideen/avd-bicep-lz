@@ -527,13 +527,6 @@ to add:
   (needs the `desktopvirtualization` extension); this repo's instructions use
   a plain `az rest` call instead so there's no extension dependency.
 
-## How this was built
-
-The architecture, scope and security decisions are the author's. Claude (Anthropic's
-AI assistant) was used as a coding assistant to draft code and documentation, and every
-change was reviewed and merged by the author. Commits and pull requests co-authored by
-Claude are labelled as such in the history.
-
 ## Reproduce it from scratch
 
 1. **Prerequisites:** an Azure subscription (this creates billable resources, so use a
